@@ -1,0 +1,112 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: deribit_user
+      POSTGRES_PASSWORD: deribit_password
+      POSTGRES_DB: deribit_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U deribit_user -d deribit_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://deribit_user:deribit_password@postgres:5432/deribit_db
+      SYNC_DATABASE_URL: postgresql://deribit_user:deribit_password@postgres:5432/deribit_db
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      DERIBIT_API_URL: https://test.deribit.com/api/v2/public
+      DERIBIT_BASE_URL: https://test.deribit.com
+      DEBUG: "true"
+      LOG_LEVEL: INFO
+      ALLOWED_TICKERS: BTC,ETH
+      HOST: 0.0.0.0
+      PORT: 8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./app:/app/app
+      - ./alembic.ini:/app/alembic.ini
+      - ./migrations:/app/migrations
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.celery
+    environment:
+      DATABASE_URL: postgresql+asyncpg://deribit_user:deribit_password@postgres:5432/deribit_db
+      SYNC_DATABASE_URL: postgresql://deribit_user:deribit_password@postgres:5432/deribit_db
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      DERIBIT_API_URL: https://test.deribit.com/api/v2/public
+      DERIBIT_BASE_URL: https://test.deribit.com
+      DEBUG: "true"
+      LOG_LEVEL: INFO
+      ALLOWED_TICKERS: BTC,ETH
+    depends_on:
+      - postgres
+      - redis
+      - app
+    volumes:
+      - ./app:/app/app
+    command: celery -A app.core.celery_config.celery_app worker --loglevel=info
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.celery
+    environment:
+      DATABASE_URL: postgresql+asyncpg://deribit_user:deribit_password@postgres:5432/deribit_db
+      SYNC_DATABASE_URL: postgresql://deribit_user:deribit_password@postgres:5432/deribit_db
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      DERIBIT_API_URL: https://test.deribit.com/api/v2/public
+      DERIBIT_BASE_URL: https://test.deribit.com
+      DEBUG: "true"
+      LOG_LEVEL: INFO
+      ALLOWED_TICKERS: BTC,ETH
+    depends_on:
+      - postgres
+      - redis
+      - app
+    volumes:
+      - ./app:/app/app
+    command: celery -A app.core.celery_config.celery_app beat --loglevel=info
+
+volumes:
+  postgres_data:
+  redis_data:
