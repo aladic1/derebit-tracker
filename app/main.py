@@ -57,19 +57,19 @@ INDEX_HTML = """
         
         .prices-container {
             display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
+            gap: 30px;
+            margin-bottom: 40px;
+            flex-wrap: wrap;
+            justify-content: center;
         }
         
         .price-box {
-            width: 280px;
-            height: 180px;
+            width: 320px;
             background: white;
             border-radius: 15px;
             display: flex;
             flex-direction: column;
-            justify-content: center;
-            align-items: center;
+            padding: 20px;
             box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
             transition: all 0.3s ease;
             position: relative;
@@ -83,7 +83,6 @@ INDEX_HTML = """
             left: 0;
             right: 0;
             height: 5px;
-            transition: background 0.3s ease;
         }
         
         .price-box.btc::before {
@@ -125,11 +124,12 @@ INDEX_HTML = """
         }
         
         .price {
-            font-size: 48px;
+            font-size: 42px;
             font-weight: bold;
             font-family: 'Courier New', monospace;
             transition: color 0.5s ease;
             margin: 10px 0;
+            text-align: center;
         }
         
         .price.up {
@@ -147,14 +147,29 @@ INDEX_HTML = """
         .pair {
             font-size: 16px;
             color: #666;
-            margin-top: 5px;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+        
+        .graph-container {
+            width: 100%;
+            height: 150px;
+            margin: 15px 0;
+            position: relative;
+        }
+        
+        .graph-canvas {
+            width: 100%;
+            height: 100%;
+            border-radius: 8px;
+            background: #f8f9fa;
         }
         
         .update-time {
-            position: absolute;
-            bottom: 10px;
             font-size: 12px;
             color: #999;
+            text-align: center;
+            margin-top: 10px;
         }
         
         .history-container {
@@ -244,10 +259,22 @@ INDEX_HTML = """
             margin: 10px 0;
         }
         
-        @media (max-width: 650px) {
+        .no-data {
+            text-align: center;
+            padding: 20px;
+            color: #999;
+            font-style: italic;
+        }
+        
+        @media (max-width: 700px) {
             .prices-container {
                 flex-direction: column;
-                gap: 20px;
+                align-items: center;
+            }
+            
+            .price-box {
+                width: 100%;
+                max-width: 400px;
             }
             
             .history-header {
@@ -271,6 +298,11 @@ INDEX_HTML = """
             </div>
             <div id="btc-price" class="price neutral">--</div>
             <div class="pair">BTC/USD</div>
+            
+            <div class="graph-container">
+                <canvas id="btc-graph" class="graph-canvas"></canvas>
+            </div>
+            
             <div id="btc-time" class="update-time"></div>
         </div>
         
@@ -282,6 +314,11 @@ INDEX_HTML = """
             </div>
             <div id="eth-price" class="price neutral">--</div>
             <div class="pair">ETH/USD</div>
+            
+            <div class="graph-container">
+                <canvas id="eth-graph" class="graph-canvas"></canvas>
+            </div>
+            
             <div id="eth-time" class="update-time"></div>
         </div>
     </div>
@@ -306,11 +343,33 @@ INDEX_HTML = """
     </div>
 
     <script>
-        // Храним предыдущие цены
-        let previousPrices = {
+        // Храним историю цен для графиков
+        let priceHistory = {
+            btc: [],
+            eth: []
+        };
+        
+        // Храним последние полученные timestamp'ы
+        let lastTimestamps = {
             btc: null,
             eth: null
         };
+        
+        // Контексты canvas
+        const btcCanvas = document.getElementById('btc-graph');
+        const ethCanvas = document.getElementById('eth-graph');
+        const btcCtx = btcCanvas.getContext('2d');
+        const ethCtx = ethCanvas.getContext('2d');
+        
+        // Инициализация размеров canvas
+        function initCanvases() {
+            const containers = document.querySelectorAll('.graph-container');
+            containers.forEach(container => {
+                const canvas = container.querySelector('canvas');
+                canvas.width = container.clientWidth;
+                canvas.height = container.clientHeight;
+            });
+        }
         
         // Функция форматирования цены
         function formatPrice(price) {
@@ -320,7 +379,103 @@ INDEX_HTML = """
             });
         }
         
-        // Функция обновления текущей цены
+        // Функция рисования графика
+        function drawGraph(ctx, prices, color) {
+            if (!prices || prices.length < 2) {
+                // Очищаем canvas если данных мало
+                ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+                ctx.fillStyle = '#999';
+                ctx.font = '14px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Waiting for data...', ctx.canvas.width / 2, ctx.canvas.height / 2);
+                return;
+            }
+            
+            // Очищаем canvas
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            
+            const width = ctx.canvas.width;
+            const height = ctx.canvas.height;
+            const padding = 20;
+            
+            // Находим min и max цены
+            const minPrice = Math.min(...prices);
+            const maxPrice = Math.max(...prices);
+            const priceRange = maxPrice - minPrice || 1;
+            
+            // Рисуем сетку
+            ctx.strokeStyle = '#e0e0e0';
+            ctx.lineWidth = 1;
+            
+            // Горизонтальные линии
+            for (let i = 0; i <= 4; i++) {
+                const y = padding + (height - 2 * padding) * (i / 4);
+                ctx.beginPath();
+                ctx.moveTo(padding, y);
+                ctx.lineTo(width - padding, y);
+                ctx.stroke();
+                
+                // Подписи цен
+                const price = maxPrice - (priceRange * i / 4);
+                ctx.fillStyle = '#666';
+                ctx.font = '10px Arial';
+                ctx.textAlign = 'left';
+                ctx.fillText(formatPrice(price).slice(0, 10), 5, y - 2);
+            }
+            
+            // Рисуем линию графика
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.lineJoin = 'round';
+            
+            const pointCount = prices.length;
+            for (let i = 0; i < pointCount; i++) {
+                const x = padding + (width - 2 * padding) * (i / (pointCount - 1));
+                const y = padding + (height - 2 * padding) * (1 - (prices[i] - minPrice) / priceRange);
+                
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+            
+            ctx.stroke();
+            
+            // Рисуем точки (только первую, последнюю и каждую 5-ю)
+            ctx.fillStyle = color;
+            for (let i = 0; i < pointCount; i++) {
+                // Показываем точки: первую, последнюю и каждую 5-ю
+                if (i === 0 || i === pointCount - 1 || i % 5 === 0) {
+                    const x = padding + (width - 2 * padding) * (i / (pointCount - 1));
+                    const y = padding + (height - 2 * padding) * (1 - (prices[i] - minPrice) / priceRange);
+                    
+                    ctx.beginPath();
+                    ctx.arc(x, y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            
+            // Добавляем легенду (процент изменения)
+            if (prices.length > 1) {
+                const latestPrice = prices[prices.length - 1];
+                const firstPrice = prices[0];
+                const change = latestPrice - firstPrice;
+                const changePercent = ((change / firstPrice) * 100).toFixed(2);
+                
+                ctx.fillStyle = change >= 0 ? '#4caf50' : '#f44336';
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'right';
+                ctx.fillText(
+                    `${change >= 0 ? '+' : ''}${changePercent}%`,
+                    width - padding,
+                    padding + 15
+                );
+            }
+        }
+        
+        // Функция обновления цены и графика (только при новых данных)
         async function updatePrice(ticker, elementId) {
             try {
                 const response = await fetch(`/api/ticker/latest?ticker=${ticker}`);
@@ -337,33 +492,52 @@ INDEX_HTML = """
                     const timeElement = document.getElementById(`${elementId}-time`);
                     
                     const currentPrice = data.price;
-                    const previousPrice = previousPrices[elementId];
+                    const currentTimestamp = data.timestamp;
                     
-                    // Обновляем цену
-                    priceElement.textContent = formatPrice(currentPrice);
-                    
-                    // Определяем состояние (up/down/neutral)
-                    let state = 'neutral';
-                    if (previousPrice !== null) {
-                        if (currentPrice > previousPrice) {
-                            state = 'up';
-                        } else if (currentPrice < previousPrice) {
-                            state = 'down';
+                    // Проверяем, новые ли это данные (по timestamp)
+                    if (lastTimestamps[elementId] !== currentTimestamp) {
+                        console.log(`New data for ${ticker}: ${currentPrice} at ${currentTimestamp}`);
+                        
+                        // Обновляем цену
+                        priceElement.textContent = formatPrice(currentPrice);
+                        
+                        // Определяем состояние (up/down/neutral)
+                        let state = 'neutral';
+                        if (priceHistory[elementId].length > 0) {
+                            const previousPrice = priceHistory[elementId][priceHistory[elementId].length - 1];
+                            if (currentPrice > previousPrice) {
+                                state = 'up';
+                            } else if (currentPrice < previousPrice) {
+                                state = 'down';
+                            }
                         }
+                        
+                        // Применяем стили
+                        priceElement.className = `price ${state}`;
+                        boxElement.className = `price-box ${elementId} ${state}`;
+                        
+                        // Добавляем цену в историю для графика
+                        priceHistory[elementId].push(currentPrice);
+                        
+                        // Ограничиваем историю до 20 точек (примерно 20 минут данных)
+                        if (priceHistory[elementId].length > 20) {
+                            priceHistory[elementId].shift();
+                        }
+                        
+                        // Обновляем график только при новых данных
+                        const ctx = elementId === 'btc' ? btcCtx : ethCtx;
+                        const color = elementId === 'btc' ? '#f7931a' : '#627eea';
+                        drawGraph(ctx, priceHistory[elementId], color);
+                        
+                        // Сохраняем timestamp
+                        lastTimestamps[elementId] = currentTimestamp;
                     }
                     
-                    // Применяем стили
-                    priceElement.className = `price ${state}`;
-                    boxElement.className = `price-box ${elementId} ${state}`;
-                    
-                    // Обновляем время
+                    // Всегда обновляем время (даже если данные те же)
                     if (data.created_at) {
                         const updateTime = new Date(data.created_at);
-                        timeElement.textContent = updateTime.toLocaleTimeString();
+                        timeElement.textContent = `Last update: ${updateTime.toLocaleTimeString()}`;
                     }
-                    
-                    // Сохраняем текущую цену как предыдущую
-                    previousPrices[elementId] = currentPrice;
                     
                     return true;
                 }
@@ -372,6 +546,7 @@ INDEX_HTML = """
                 const priceElement = document.getElementById(`${elementId}-price`);
                 priceElement.textContent = 'Error';
                 priceElement.className = 'price down';
+                timeElement.textContent = 'Connection error';
                 return false;
             }
         }
@@ -422,7 +597,7 @@ INDEX_HTML = """
                     if (data.success && data.data.length > 0) {
                         let html = `
                             <div style="margin-bottom: 15px; color: #666;">
-                                Showing ${data.data.length} records
+                                Showing ${data.data.length} records (updated every minute)
                             </div>
                             <table class="history-table">
                                 <thead>
@@ -453,7 +628,7 @@ INDEX_HTML = """
                         html += '</tbody></table>';
                         container.innerHTML = html;
                     } else {
-                        container.innerHTML = '<div class="loading">No data available yet</div>';
+                        container.innerHTML = '<div class="loading">No data available yet. Data is collected every minute.</div>';
                     }
                 }
             } catch (error) {
@@ -474,19 +649,54 @@ INDEX_HTML = """
             await updatePrice('eth_usd', 'eth');
         }
         
+        // Функция загрузки начальных данных для графиков
+        async function loadInitialGraphData() {
+            try {
+                // Загружаем последние 20 точек для каждого тикера
+                for (const [ticker, elementId] of [['btc_usd', 'btc'], ['eth_usd', 'eth']]) {
+                    const response = await fetch(`/api/ticker/data?ticker=${ticker}&limit=20`);
+                    const data = await response.json();
+                    
+                    if (data.success && data.data.length > 0) {
+                        // Извлекаем цены в правильном порядке (от старых к новым)
+                        const prices = data.data.map(item => item.price);
+                        priceHistory[elementId] = prices;
+                        
+                        // Сохраняем последний timestamp
+                        if (data.data.length > 0) {
+                            lastTimestamps[elementId] = data.data[data.data.length - 1].timestamp;
+                        }
+                        
+                        // Рисуем график
+                        const ctx = elementId === 'btc' ? btcCtx : ethCtx;
+                        const color = elementId === 'btc' ? '#f7931a' : '#627eea';
+                        drawGraph(ctx, priceHistory[elementId], color);
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading initial graph data:', error);
+            }
+        }
+        
         // Инициализация
         window.onload = function() {
+            // Инициализируем размеры canvas
+            initCanvases();
+            
             // Установка текущей даты в фильтр
             const now = new Date();
             now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
             document.getElementById('date-filter').value = now.toISOString().slice(0, 16);
             
-            // Первоначальная загрузка
+            // Загружаем начальные данные для графиков
+            loadInitialGraphData();
+            
+            // Первоначальная загрузка текущих цен и истории
             refreshAll();
             loadHistory();
             
-            // Автообновление текущих цен каждую секунду
-            setInterval(refreshAll, 1000);
+            // Автообновление текущих цен каждые 5 секунд (проверка новых данных)
+            setInterval(refreshAll, 5000);
             
             // Автообновление истории каждые 30 секунд (только если нет фильтра по дате)
             setInterval(() => {
@@ -494,7 +704,18 @@ INDEX_HTML = """
                     loadHistory();
                 }
             }, 30000);
+            
+            // Ресайз окна
+            window.addEventListener('resize', () => {
+                initCanvases();
+                // Перерисовываем графики
+                drawGraph(btcCtx, priceHistory.btc, '#f7931a');
+                drawGraph(ethCtx, priceHistory.eth, '#627eea');
+            });
         };
+        
+        // Инициализация canvas при загрузке DOM
+        document.addEventListener('DOMContentLoaded', initCanvases);
     </script>
 </body>
 </html>
