@@ -26,6 +26,7 @@ cd deribit_ticker
 ```
 
 2. Скопируйте файл с переменными окружения:
+```bash
 .env
 # Database
 DB_HOST=localhost
@@ -33,6 +34,7 @@ DB_PORT=5432
 DB_NAME=deribit_db
 DB_USER=postgres
 DB_PASSWORD=postgres
+```
 
 # Redis for Celery
 REDIS_URL=redis://localhost:6379/0
