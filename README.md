@@ -34,13 +34,13 @@ DB_PORT=5432
 DB_NAME=deribit_db
 DB_USER=postgres
 DB_PASSWORD=postgres
-```
 
 # Redis for Celery
 REDIS_URL=redis://localhost:6379/0
 
 # Deribit API
 DERIBIT_BASE_URL=https://www.deribit.com/api/v2
+```
 
 3. Запустите приложение с помощью Docker Compose:
 ```bash
